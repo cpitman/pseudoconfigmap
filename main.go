@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/watch"
@@ -30,7 +32,11 @@ func main() {
 	}
 	listOptions := metav1.ListOptions{FieldSelector: "metadata.name=" + configMapName}
 
-	watchInterface, err := clientset.CoreV1().ConfigMaps("").Watch(listOptions)
+	namespace := os.Getenv("NAMESPACE")
+	if namespace == "" {
+		panic("Environment Variable NAMESPACE must be set")
+	}
+	watchInterface, err := clientset.CoreV1().ConfigMaps(namespace).Watch(listOptions)
 
 	if errors.IsNotFound(err) {
 		fmt.Printf("ConfigMap not found\n")
@@ -41,7 +47,12 @@ func main() {
 	for {
 		event := <-watchInterface.ResultChan()
 		if event.Type == watch.Added || event.Type == watch.Modified {
-			fmt.Printf("ConfigMap modified")
+
+			//TODO: Handle keys that have been deleted
+			value := event.Object.(*corev1.ConfigMap)
+			for path, data := range value.Data {
+				ioutil.WriteFile("/config/"+path, []byte(data), 0660)
+			}
 		}
 	}
 }
